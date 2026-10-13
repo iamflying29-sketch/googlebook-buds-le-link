@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Buds LE Link</string>
+
+    <string name="about">Keeps the Galaxy Buds app connected to your Galaxy Buds over LE Audio: whenever your Buds connect, it reconnects the Buds app automatically. It works in the background on its own. You can close this window any time without affecting it.</string>
+    <string name="button_reconnect">Reconnect now</string>
+    <string name="button_open_wearable">Open Galaxy Wearable</string>
+    <string name="button_fix">Fix</string>
+
+    <string name="status_link_up">Galaxy Buds app: connected</string>
+    <string name="status_link_down">Galaxy Buds app: not connected</string>
+    <string name="status_link_unknown">Galaxy Buds app: waiting to see the next Buds connection</string>
+    <string name="status_since">(since %1$s)</string>
+    <string name="status_last_signal">Last reconnect signal: %1$s</string>
+    <string name="status_plugin">Samsung Buds plugin: %1$s</string>
+    <string name="plugin_version_changed">(changed since this helper was made. If the Buds app misbehaves, see Troubleshooting in the Buds LE Link README.)</string>
+
+    <string name="checks_title">Setup checks</string>
+    <string name="check_bluetooth">Nearby devices permission</string>
+    <string name="check_notifications">Notifications allowed (for problem alerts)</string>
+    <string name="check_battery">Battery: unrestricted</string>
+    <string name="check_background">Background activity allowed</string>
+    <string name="check_hibernation">Never paused when unused</string>
+    <string name="check_plugin">Samsung Buds plugin installed and running in ARM mode</string>
+
+    <string name="problem_bluetooth_permission">Buds LE Link lost its Nearby devices permission, so it can\'t notice your Buds connecting.</string>
+    <string name="problem_battery">Battery optimization was turned back on for Buds LE Link.</string>
+    <string name="problem_background_restricted">Background activity is restricted for Buds LE Link.</string>
+    <string name="problem_hibernation">Android may pause Buds LE Link if you don\'t open it for a few months.</string>
+    <string name="problem_plugin_missing">Samsung\'s Buds plugin isn\'t installed.</string>
+    <string name="problem_plugin_disabled">Samsung\'s Buds plugin is disabled.</string>
+    <string name="problem_plugin_x86">Samsung\'s Buds plugin was reinstalled in Intel mode and will crash on this Googlebook. Reinstall it in ARM mode as described in the Buds LE Link README.</string>
+
+    <string name="channel_alerts">Problems</string>
+    <string name="alert_setup_title">Buds LE Link needs attention</string>
+    <string name="alert_reconnect_title">Galaxy Buds app couldn\'t reconnect</string>
+    <string name="alert_reconnect_text">Your Buds are connected, but the Galaxy Buds app hasn\'t reconnected after several tries. Tap to try again; if that doesn\'t work, open Galaxy Wearable and tap Connect.</string>
+</resources>
