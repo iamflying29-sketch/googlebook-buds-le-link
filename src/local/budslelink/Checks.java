@@ -21,6 +21,7 @@ final class Checks {
     private static final String CHANNEL = "alerts";
     private static final int SETUP_NOTIFICATION = 1;
     private static final int RECONNECT_NOTIFICATION = 2;
+    private static final int ARM_NOTIFICATION = 3;
 
     private Checks() {}
 
@@ -58,6 +59,13 @@ final class Checks {
             notify(context, SETUP_NOTIFICATION, context.getString(R.string.alert_setup_title),
                     String.join("\n", problems));
         }
+    }
+
+    /** The ARM repair after a restart switched Samsung's plugin back: posts a notification once. */
+    static void armRepaired(Context context) {
+        notify(context, ARM_NOTIFICATION, context.getString(R.string.alert_arm_title),
+                context.getString(R.string.alert_arm_text));
+        refreshSetupWarning(context);
     }
 
     /** The plugin's control link came up: clear failure tracking. */

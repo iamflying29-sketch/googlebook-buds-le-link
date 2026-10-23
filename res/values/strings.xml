@@ -29,10 +29,13 @@
     <string name="problem_hibernation">Android may pause Buds LE Link if you don\'t open it for a few months.</string>
     <string name="problem_plugin_missing">Samsung\'s Buds plugin isn\'t installed.</string>
     <string name="problem_plugin_disabled">Samsung\'s Buds plugin is disabled.</string>
-    <string name="problem_plugin_x86">Samsung\'s Buds plugin was reinstalled in Intel mode and will crash on this Googlebook. Reinstall it in ARM mode as described in the Buds LE Link README.</string>
+    <string name="problem_plugin_x86">Android switched Samsung\'s Buds plugin to Intel mode, so the Galaxy Buds app will crash on this Googlebook. After a restart Buds LE Link switches it back to ARM mode by itself if the automatic ARM repair is set up. If this warning stays, see Troubleshooting in the Buds LE Link README.</string>
 
     <string name="channel_alerts">Problems</string>
     <string name="alert_setup_title">Buds LE Link needs attention</string>
     <string name="alert_reconnect_title">Galaxy Buds app couldn\'t reconnect</string>
     <string name="alert_reconnect_text">Your Buds are connected, but the Galaxy Buds app hasn\'t reconnected after several tries. Tap to try again; if that doesn\'t work, open Galaxy Wearable and tap Connect.</string>
+    <string name="check_arm_repair">Automatic ARM repair after restarts (own pairing installed)</string>
+    <string name="alert_arm_title">Samsung Buds plugin repaired</string>
+    <string name="alert_arm_text">After the restart, Android had switched Samsung\'s Buds plugin to Intel mode. Buds LE Link switched it back to ARM mode, so the Galaxy Buds app works normally.</string>
 </resources>

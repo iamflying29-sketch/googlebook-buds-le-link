@@ -166,6 +166,7 @@ public class MainActivity extends Activity {
         if (pluginProblem != null) {
             checks.addView(text(pluginProblem, 14));
         }
+        row(R.string.check_arm_repair, ArmJob.provisioned(this), null);
         Checks.refreshSetupWarning(this);
     }
 

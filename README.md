@@ -5,7 +5,8 @@ running GooglebookOS, where the earbuds connect over Bluetooth LE Audio only. It
 signals Samsung's Galaxy Buds plugin to open its control link whenever the earbuds connect, checks the link every
 15 minutes, and warns me only when the link really fails. This repository also documents the fix that came first:
 reinstalling the Galaxy Buds plugin in its ARM version so that Galaxy Wearable stops crashing on the Googlebook's
-Intel processor.
+Intel processor. Since version 2.3, Buds LE Link also keeps the plugin in ARM mode after every restart, because a
+GooglebookOS update can switch it back to Intel mode.
 
 ## What it does
 
@@ -22,6 +23,9 @@ own:
   only after five failed checks in a row, about a minute apart, so that a slow reconnect never looks like a failure.
 - It checks its own setup (permissions, battery settings, background limits, and whether the plugin is installed,
   enabled and running in ARM mode) and tells me if anything needs fixing.
+- After every restart it checks whether Android has switched the plugin to Intel mode. If it has, and the optional
+  automatic ARM repair is set up, it reinstalls the saved plugin in ARM mode by itself and tells me with a
+  notification.
 
 A status window shows the link state, the time of the last reconnect signal, the installed plugin version and the
 setup checks. It has a **Reconnect now** button and an **Open Galaxy Wearable** button, and every failed setup
@@ -132,12 +136,47 @@ In the first test, the plugin's link came back about 4 seconds after the earbuds
 
 I wanted it to be foolproof, so version 2 added the 15-minute check, the setup checks with a Fix button for every
 permission and battery setting it needs, and the status window. Version 2.2 turned that window into a normal app
-window that closes cleanly without affecting the background part.
+window that closes cleanly without affecting the background part. Version 2.3 added the automatic ARM repair
+described next.
+
+### Keeping the plugin in ARM mode after restarts
+
+A GooglebookOS system update broke the crash fix. After the Googlebook restarted into the update, the plugin was in
+Intel mode again (`primaryCpuAbi=x86_64`), although nothing had reinstalled it: its version and its install time were
+unchanged. Buds LE Link's setup check caught it and warned me, and I reinstalled the plugin in ARM mode by hand.
+
+The ARM choice that `pm install --abi arm64-v8a` makes is not a lasting setting. Right after the reinstall, the plugin
+lists `cpuAbiOverride=arm64-v8a`, but after a plain restart that entry is empty again. In my test a plain restart
+kept the plugin in ARM mode anyway. The system update is the one time I saw it switch to Intel, and I have not
+proven exactly why the update decided the mode again.
+
+Fixing that needs the rights of adb, which an ordinary app does not have. So version 2.3 gives Buds LE Link its own
+Wireless debugging pairing, with its own key that is separate from every other pairing:
+
+1. **After every restart** (and only then), a boot receiver schedules a check 5 seconds later. The check asks
+   Android which library folder the plugin uses. That needs no adb and takes a moment.
+2. **ARM mode:** the check does nothing more.
+3. **Intel mode:** the app finds the Googlebook's current Wireless debugging port (it moves after every Wi-Fi
+   reconnection), connects to it on this device itself (`127.0.0.1`) with its own key, and proves that it reached
+   Android's real adb service. It sends a random code that only a command from the adb shell can deliver back to the
+   app. Then it checks the fingerprint (SHA-256) of the saved plugin copy and runs
+   `pm install -r --abi arm64-v8a -i com.android.vending` with that copy, which keeps the plugin's data. Afterwards it
+   confirms that the plugin is in ARM mode, posts **Samsung Buds plugin repaired**, and schedules a reconnect check.
+4. **If it cannot repair it** (no Wi-Fi yet, or Wireless debugging is off), it tries again with a growing delay that
+   starts at 30 seconds, for up to 20 attempts. The **Buds LE Link needs attention** warning stays up until the plugin
+   is in ARM mode again, so a failure is never silent.
+
+I tested it three ways on my Googlebook. A forced test ran the whole repair while the plugin was already in ARM mode,
+and the reinstall succeeded in about a second and a half. For a real test I put the plugin into Intel mode myself,
+the way the update had, and ran the check: the plugin was back in ARM mode 1.1 seconds later, and the Galaxy Buds app
+reconnected about 4 seconds after that without crashing. Finally I restarted the Googlebook, and Android's job history
+showed the check running about 15 seconds after startup and leaving the plugin, which was in ARM mode, untouched.
 
 ## Requirements
 
 - **Device:** a Lenovo Googlebook 15 (x86-64 Intel), or another x86-64 GooglebookOS device whose Galaxy Buds plugin
-  has the same problem. I built and tested this on GooglebookOS build CL3B.260622.271.R1 (Android 17).
+  has the same problem. I built and tested this on GooglebookOS builds CL3B.260622.271.R1 and CL3B.260622.276.R4
+  (Android 17).
 - **Earbuds:** Samsung Galaxy Buds4, paired in Bluetooth settings and connected over LE Audio. The helper reacts to
   any device whose name contains "Galaxy Buds", but I only tested the Buds4.
 - **Samsung apps:** Galaxy Wearable (`com.samsung.android.app.watchmanager`) and its Galaxy Buds plugin
@@ -146,8 +185,11 @@ window that closes cleanly without affecting the background part.
 - **Android version:** Buds LE Link needs Android 13 (API level 33) or later. It targets API level 35.
 - **Permissions used by Buds LE Link:** Nearby devices (`BLUETOOTH_CONNECT`), notifications (`POST_NOTIFICATIONS`),
   starting at boot (`RECEIVE_BOOT_COMPLETED`), and permission to ask for unrestricted battery use
-  (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). It has no internet permission.
-- **Tools:** the Linux Terminal with adb connected to GooglebookOS over Wireless debugging, `unzip`, and, for
+  (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). For the automatic ARM repair it also has `INTERNET`,
+  `ACCESS_NETWORK_STATE` and `ACCESS_LOCAL_NETWORK`. It uses them only to find and reach the Googlebook's own
+  Wireless debugging service at `127.0.0.1`. See [Safety and privacy notes](#safety-and-privacy-notes).
+- **Tools:** the Linux Terminal with adb connected to GooglebookOS over Wireless debugging, `unzip`, `openssl` for
+  the optional automatic ARM repair, and, for
   building the app, a JDK plus the Android SDK build tools 35.0.0 and platform android-35. The shared
   [getting-started guide](https://github.com/iamflying29-sketch/googlebook-projects/blob/main/GETTING-STARTED.md)
   explains how to set all of this up and how to find your Android user ID.
@@ -329,6 +371,77 @@ are Samsung's software, so do not share them.
    window should show **Galaxy Buds app: connected**. You can now close the window. The background part keeps
    working.
 
+### Part 3 (optional): Set up the automatic ARM repair
+
+Without this part, Buds LE Link still warns you when the plugin is in Intel mode, and you repeat Part 1 yourself.
+With it, Buds LE Link repairs that by itself after a restart. Wireless debugging must be on after a restart for the
+repair to run.
+
+1. Make an adb key just for Buds LE Link and pair it with Wireless debugging. The key gets its own folder and its own
+   adb server port (5041 here), so it never mixes with the adb you normally use. On the Googlebook, open
+   **Settings > System > Developer options > Wireless debugging > Pair device with pairing code**, and use the
+   address, port and code it shows:
+
+   ```bash
+   K=~/.config/buds-le-link
+   mkdir -p $K/adbhome/.android && chmod 700 $K $K/adbhome $K/adbhome/.android
+   HOME=$K/adbhome adb keygen $K/adbhome/.android/adbkey
+   sed -i 's/ [^ ]*$/ BudsLELink@googlebook/' $K/adbhome/.android/adbkey.pub
+   HOME=$K/adbhome ANDROID_ADB_SERVER_PORT=5041 adb pair <IP>:<PAIRING_PORT> <PAIRING_CODE>
+   HOME=$K/adbhome ANDROID_ADB_SERVER_PORT=5041 adb kill-server
+   ```
+
+   `adb pair` prints `Successfully paired` when it works.
+
+2. Turn the key into the key file the app reads (PKCS#12, protected by a random password):
+
+   ```bash
+   (umask 077; head -c 24 /dev/urandom | base64 | tr -d '/+=' > $K/p12.pass)
+   openssl req -new -x509 -key $K/adbhome/.android/adbkey -out $K/cert.pem -days 36500 -subj /CN=BudsLELink
+   openssl pkcs12 -export -inkey $K/adbhome/.android/adbkey -in $K/cert.pem -out $K/key.p12 -passout "pass:$(cat $K/p12.pass)"
+   chmod 600 $K/key.p12 $K/cert.pem $K/p12.pass
+   ```
+
+3. Hand the key file to Buds LE Link and allow it to reach Wireless debugging. Only the adb shell can deliver this
+   command, because the receiver requires a system permission from the sender:
+
+   ```bash
+   adb shell am broadcast --user <USER_ID> -n local.budslelink/.ControlReceiver -a local.budslelink.PROVISION \
+       --es p12 $(base64 -w0 $K/key.p12) --es pass $(cat $K/p12.pass)
+   adb shell pm grant --user <USER_ID> local.budslelink android.permission.ACCESS_LOCAL_NETWORK
+   ```
+
+   The first command prints `data="provisioned"`.
+
+4. Put your saved plugin copy from Part 1 where the adb shell can read it, under the exact name the app expects, and
+   compare its fingerprint with the one the app checks:
+
+   ```bash
+   adb shell mkdir -p /data/local/tmp/budslelink
+   adb push ~/apks/budsunitemgr/base.apk /data/local/tmp/budslelink/plugin-9.0.10.1720.apk
+   adb shell sha256sum /data/local/tmp/budslelink/plugin-9.0.10.1720.apk
+   ```
+
+   The repair only runs with the exact file it was written for. Its fingerprint must be
+   `3a8c0cf868c85a6c1a82ebb059004b6da591ce95a4051d6521503027f48c2efe`, which is version 9.0.10.1720 as Google Play
+   installed it on my Googlebook as a single APK. If yours is different (another version, or a copy split into
+   several files), the repair refuses to run and the Intel-mode warning stays, so you repeat Part 1 by hand
+   instead.
+
+5. Test the whole repair once. This command makes the app run it even though the plugin is already in ARM mode, so
+   it changes nothing:
+
+   ```bash
+   adb shell am broadcast --user <USER_ID> -n local.budslelink/.ControlReceiver -a local.budslelink.ARMTEST
+   adb logcat -d -s BudsLELink | grep 'ARM repair'
+   ```
+
+   After a few seconds the log should show `ARM repair: pm install said: Success`. To run exactly the check that a
+   restart runs (it does nothing while the plugin is in ARM mode), add `--ez force false` to the first command.
+
+6. Open the status window. The setup check **Automatic ARM repair after restarts (own pairing installed)** should
+   have a check mark.
+
 ## Using it
 
 Day to day there is nothing to do. When the earbuds connect, Buds LE Link signals the plugin, and the Galaxy
@@ -362,13 +475,15 @@ Below the buttons, the **Setup checks** list shows a check mark or a warning sig
 | Battery: unrestricted | Opens the system dialog that turns off battery optimization for the app |
 | Background activity allowed | Opens the app's App info page |
 | Never paused when unused | Opens the system setting that controls pausing the app when unused |
-| Samsung Buds plugin installed and running in ARM mode | No button. A warning line explains the problem. Use Part 1 of the installation to fix it. |
+| Samsung Buds plugin installed and running in ARM mode | No button. A warning line explains the problem. After a restart the automatic ARM repair fixes it if it is set up. Otherwise use Part 1 of the installation. |
+| Automatic ARM repair after restarts (own pairing installed) | No button. A check mark means the app has its own adb key. Set it up with Part 3 of the installation. |
 
 Close the window with its close button at any time. Closing it never affects the background part.
 
 ### Notifications
 
-Buds LE Link posts notifications only when something is wrong, in a channel called **Problems**:
+Buds LE Link posts notifications only when something is wrong or has just been repaired, in a channel called
+**Problems**:
 
 - **Buds LE Link needs attention** lists every setup problem it found. It disappears by itself once everything is
   fixed. Notifications permission is the one problem it cannot report this way, because without it no notification
@@ -376,6 +491,8 @@ Buds LE Link posts notifications only when something is wrong, in a channel call
 - **Galaxy Buds app couldn't reconnect** appears when 5 verify checks in a row, about a minute apart, have found
   the earbuds on LE Audio but the plugin's control channel down. It disappears by itself when the control channel
   comes up or the earbuds disconnect.
+- **Samsung Buds plugin repaired** appears once when the automatic ARM repair has switched the plugin back to ARM
+  mode after a restart.
 
 Tapping either notification opens the status window.
 
@@ -388,7 +505,15 @@ adb logcat -d -s BudsLELink
 ```
 
 You will see lines such as `Sending ACTION_READY to com.samsung.accessory.budsunitemgr` and, when the control link
-does not come up, `Buds on LE Audio but no control link yet (check 1)`.
+does not come up, `Buds on LE Audio but no control link yet (check 1)`. The automatic ARM repair writes lines that
+start with `ARM repair:` and, when there is nothing to do, `plugin is in ARM mode: nothing to do`.
+
+Right after a restart, the check's log line was missing once on my Googlebook. Android's job history shows
+whether it ran (job 3 is the ARM check, and "onStartJob returned false" means the plugin was in ARM mode):
+
+```bash
+adb shell dumpsys jobscheduler | grep budslelink
+```
 
 ## Updating, and what happens after updates
 
@@ -409,8 +534,8 @@ seconds later. Its permissions and protections carry over. If you lost your keys
 
 ### After a reboot
 
-Nothing to do. A boot receiver re-creates the 15-minute check, marks the classic link as down, and runs a verify
-check 20 seconds after startup.
+Nothing to do. A boot receiver re-creates the 15-minute check, marks the classic link as down, runs a verify check
+20 seconds after startup, and runs the ARM check 5 seconds after startup.
 
 ### After a Galaxy Buds plugin update
 
@@ -426,8 +551,12 @@ hand), two things can happen:
 
 ### After a GooglebookOS update
 
-Open the status window and look at the setup checks and the plugin line. If a future GooglebookOS build changes how
-the Buds4 connect, for example by allowing the classic audio connections next to LE Audio, the plugin may behave
+A system update can switch the plugin to Intel mode. With the automatic ARM repair set up (Part 3), Buds LE Link
+switches it back after the restart and posts **Samsung Buds plugin repaired**. Without it, the setup check warns
+you, and you repeat Part 1.
+
+Then open the status window and look at the setup checks and the plugin line. If a future GooglebookOS build changes
+how the Buds4 connect, for example by allowing the classic audio connections next to LE Audio, the plugin may behave
 differently, and you should test the case-out reconnect from step 7 again.
 
 ## Uninstalling
@@ -439,7 +568,16 @@ adb shell cmd deviceidle whitelist -local.budslelink
 adb shell pm uninstall --user <USER_ID> local.budslelink
 ```
 
-Uninstalling also removes its scheduled checks, its saved state and its permissions.
+Uninstalling also removes its scheduled checks, its saved state, its copy of the adb key and its permissions.
+
+If you set up the automatic ARM repair, also remove its pairing and its plugin copy. Remove the pairing in
+**Settings > System > Developer options > Wireless debugging** (the pairing you made for Buds LE Link), and delete the
+plugin copy and the key folder:
+
+```bash
+adb shell rm -r /data/local/tmp/budslelink
+rm -r ~/.config/buds-le-link
+```
 
 The crash fix does not need to be undone. Reverting it brings the crash back as long as Samsung's Intel build is
 incomplete. If you want Google Play to manage the plugin normally again, open its Play Store page (step 9 of Part
@@ -481,6 +619,13 @@ earbuds on LE Audio but the control channel down. Tap the notification to open t
 **"Buds LE Link needs attention" notification.** Open the status window and use the **Fix** button next to each
 check with a warning sign, or repeat step 4 of Part 2. If the plugin line has the warning, repeat Part 1.
 
+**The plugin was in Intel mode after a restart, and the automatic repair did not fix it.** Check that the setup check
+**Automatic ARM repair after restarts** has a check mark, that Wireless debugging is on, and that the plugin copy is
+in place with the right fingerprint (step 4 of Part 3). Then run the test from step 5 of Part 3 and read the
+`ARM repair:` log lines. `Wireless debugging not reachable yet` means it could not connect, and `saved plugin copy
+missing or changed` means the copy is missing or is a different file. If the pairing was removed from the Wireless
+debugging list, pair a new key with Part 3 again.
+
 **`adb install` fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.** The new APK was signed with a different keystore
 than the installed copy, for example after you built it on another computer. Uninstall the old copy first, then
 install the new one and repeat steps 4 to 6 of Part 2.
@@ -491,7 +636,16 @@ earbuds' own behavior. I confirmed it with Buds LE Link disabled. Put them in th
 
 ## Safety and privacy notes
 
-- **No internet.** Buds LE Link has no internet permission, so it cannot send anything off the device.
+- **It never contacts anything outside the Googlebook.** The internet permission exists only for the automatic ARM
+  repair, which connects to `127.0.0.1`, the Googlebook's own Wireless debugging service. To find that service's
+  current port it listens for the local network announcements of Wireless debugging and accepts only ports that
+  this Googlebook itself announces. Before it sends any command, it proves that it reached Android's real adb
+  service.
+- **What the automatic ARM repair can do.** Its key has the rights of adb on the Googlebook, like any Wireless
+  debugging pairing. The app uses it only after a restart, only when the plugin is in Intel mode, and only for three
+  commands: a broadcast back to itself for the proof, `sha256sum` on the saved plugin copy, and the
+  `pm install --abi arm64-v8a` reinstall of that copy. The key file lives in the app's private storage, and the app's
+  backup is turned off.
 - **It never connects or disconnects a Bluetooth device itself.** It only sends one broadcast, addressed to the
   Galaxy Buds plugin's package, and the plugin acts only on the earbuds it manages. The plugin also has a
   disconnect command that disconnects the system's own Bluetooth profiles. Buds LE Link never sends it.
@@ -503,8 +657,9 @@ earbuds' own behavior. I confirmed it with Buds LE Link disabled. Put them in th
   off for the app.
 - **It never blocks the system.** It uses only public Android Bluetooth and job scheduling interfaces, and it asks
   the LE Audio service one targeted question with a 10-second timeout. It acts only on Bluetooth link events for
-  Galaxy Buds, at boot, in its 15-minute check and in short verify checks. The app itself never uses adb and never
-  reads system service dumps.
+  Galaxy Buds, at boot, in its 15-minute check and in short verify checks. It never reads system service dumps. Its
+  adb connection exists only during the automatic ARM repair, and every command has a 2-minute limit and a 1 MB
+  output limit.
 - **Samsung's app is not modified.** The crash fix reinstalls Samsung's own unmodified APK, copied from your own
   device. The helper only sends a broadcast that the plugin already listens for. This repository contains none of
   Samsung's code or files.
@@ -530,20 +685,26 @@ earbuds' own behavior. I confirmed it with Buds LE Link disabled. Put them in th
   even when the plugin is already connected. The plugin leaves an existing connection alone, so this is harmless.
 - **Setup needs adb.** The crash fix and the protections in Part 2 need adb over Wireless debugging. The helper
   itself needs Android 13 or later.
+- **The automatic ARM repair needs Wireless debugging.** It only runs when Wireless debugging is on after the
+  restart. It works only with the exact plugin file it checks for (version 9.0.10.1720, the fingerprint in Part 3),
+  and it only checks after a restart, not at other times.
 - **Tested on one setup.** I tested this with Galaxy Buds4 on one Lenovo Googlebook 15 with GooglebookOS build
-  CL3B.260622.271.R1. Other Galaxy Buds models match by name, but I have not tested them.
+  CL3B.260622.271.R1 and CL3B.260622.276.R4. Other Galaxy Buds models match by name, but I have not tested them.
 
 ## Files in this repository
 
 | File | Purpose |
 |---|---|
-| `AndroidManifest.xml` | App manifest: package `local.budslelink`, permissions, the status window, the Bluetooth and boot receivers, and the check job |
-| `build.sh` | Builds and signs `BudsLELink.apk` with plain SDK tools (version 2.2, version code 4, API levels 33 to 35) |
+| `AndroidManifest.xml` | App manifest: package `local.budslelink`, permissions, the status window, the Bluetooth, boot and control receivers, and the jobs |
+| `build.sh` | Builds and signs `BudsLELink.apk` with plain SDK tools (version 2.3, version code 5, API levels 33 to 35) |
 | `src/local/budslelink/AclReceiver.java` | Reacts to Galaxy Buds links coming up or going down and sends the timed reconnect signals |
 | `src/local/budslelink/Nudge.java` | Sends the "Bluetooth ready" broadcast to the plugin |
 | `src/local/budslelink/CheckJob.java` | The 15-minute check and the verify checks |
 | `src/local/budslelink/Checks.java` | Setup checks and the problem notifications |
-| `src/local/budslelink/BootReceiver.java` | Re-creates the checks after a reboot or an update of the helper |
+| `src/local/budslelink/BootReceiver.java` | Re-creates the checks after a reboot or an update of the helper, and schedules the ARM check after a reboot |
+| `src/local/budslelink/ArmJob.java` | The ARM check after a restart and the automatic repair |
+| `src/local/budslelink/AdbClient.java` | A minimal adb client for Wireless debugging (TLS with the app's own paired key) |
+| `src/local/budslelink/ControlReceiver.java` | Commands only the adb shell can send: install the key, the proof code, and the repair test |
 | `src/local/budslelink/Buds.java` | Recognizes Galaxy Buds and checks the plugin's installation and version |
 | `src/local/budslelink/State.java` | The small saved state (known addresses, link state, times, failure count) |
 | `src/local/budslelink/MainActivity.java` | The status window |

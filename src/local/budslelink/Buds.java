@@ -132,6 +132,16 @@ final class Buds {
         return null;
     }
 
+    /** True when Samsung's plugin is installed and set to Intel (x86_64) libraries. */
+    static boolean pluginInIntelMode(Context context) {
+        try {
+            ApplicationInfo info = context.getPackageManager().getApplicationInfo(PLUGIN, 0);
+            return info.nativeLibraryDir != null && info.nativeLibraryDir.endsWith("x86_64");
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
     static String pluginVersion(Context context) {
         try {
             PackageInfo plugin = context.getPackageManager().getPackageInfo(PLUGIN, 0);
