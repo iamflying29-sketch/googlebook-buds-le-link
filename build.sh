@@ -16,7 +16,7 @@ mkdir -p "$B/classes" "$B/gen"
 
 "$BT/aapt2" compile --dir res -o $B/res.zip
 "$BT/aapt2" link -o $B/unsigned.apk -I "$JAR" --manifest AndroidManifest.xml \
-    --min-sdk-version 33 --target-sdk-version 35 --version-code 5 --version-name 2.3 \
+    --min-sdk-version 33 --target-sdk-version 35 --version-code 6 --version-name 2.4 \
     --java $B/gen $B/res.zip
 
 javac -Xlint:-options -source 11 -target 11 -cp "$JAR" -d $B/classes \

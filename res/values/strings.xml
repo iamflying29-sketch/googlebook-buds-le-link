@@ -12,6 +12,7 @@
     <string name="status_link_unknown">Galaxy Buds app: waiting to see the next Buds connection</string>
     <string name="status_since">(since %1$s)</string>
     <string name="status_last_signal">Last reconnect signal: %1$s</string>
+    <string name="status_last_restart">Last restart of a stuck Samsung plugin: %1$s</string>
     <string name="status_plugin">Samsung Buds plugin: %1$s</string>
     <string name="plugin_version_changed">(changed since this helper was made. If the Buds app misbehaves, see Troubleshooting in the Buds LE Link README.)</string>
 

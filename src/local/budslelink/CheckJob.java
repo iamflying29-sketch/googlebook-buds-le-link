@@ -34,11 +34,13 @@ public class CheckJob extends JobService {
     private static final long RETRY_MS = 60_000;
     private static final long PROXY_TIMEOUT_MS = 10_000;
     private static final long SECOND_NUDGE_MS = 2500;
-    // Failed verify checks (about a minute apart, each confirming the Buds are on LE Audio
-    // and the control link is down) before a notification is posted: 5 minutes, so no false alarms.
-    private static final int FAILURES_BEFORE_ALERT = 5;
+    // Failed verify checks (about a minute apart, each confirming the Buds are on LE Audio and the
+    // control link is down) before Samsung's plugin is restarted: 5 minutes, so no false restarts.
+    static final int FAILURES_BEFORE_RESTART = 5;
+    // ... and before a notification is posted: the restart gets about 3 minutes to work first.
+    private static final int FAILURES_BEFORE_ALERT = 8;
     // Stop retrying after this many failures; the periodic check keeps trying.
-    private static final int MAX_VERIFY_FAILURES = 8;
+    private static final int MAX_VERIFY_FAILURES = 10;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -137,6 +139,7 @@ public class CheckJob extends JobService {
         State.prefs(context).edit().putLong(State.LAST_LE_AUDIO_SEEN_AT, System.currentTimeMillis()).apply();
 
         boolean retry = false;
+        boolean restart = false;
         if (verify) {
             int classic = State.classic(context);
             if (classic == State.CLASSIC_UP) {
@@ -149,12 +152,26 @@ public class CheckJob extends JobService {
                 int failures = Checks.verifyFailed(context, FAILURES_BEFORE_ALERT);
                 Log.w(Nudge.TAG, "Buds on LE Audio but no control link yet (check " + failures + ")");
                 retry = failures < MAX_VERIFY_FAILURES;
+                restart = failures >= FAILURES_BEFORE_RESTART && PluginRestart.allowed(context);
             }
         }
 
+        if (restart) {
+            // The plugin can get stuck with an empty connection that no signal clears (see PluginRestart).
+            boolean scheduleRetry = retry;
+            new Thread(() -> {
+                PluginRestart.run(context);
+                handler.post(() -> nudgeAndFinish(params, scheduleRetry));
+            }, "plugin-restart").start();
+            return;
+        }
+        nudgeAndFinish(params, retry);
+    }
+
+    private void nudgeAndFinish(JobParameters params, boolean scheduleRetry) {
+        Context context = getApplicationContext();
         // Two nudges: the first refreshes the plugin's stale state, the second connects.
         Nudge.send(context);
-        boolean scheduleRetry = retry;
         handler.postDelayed(() -> {
             Nudge.send(context);
             jobFinished(params, false);

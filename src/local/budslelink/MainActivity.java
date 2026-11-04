@@ -145,6 +145,10 @@ public class MainActivity extends Activity {
         if (nudgedAt > 0) {
             text.append('\n').append(getString(R.string.status_last_signal, time(nudgedAt)));
         }
+        long restartedAt = State.prefs(this).getLong(PluginRestart.LAST_RESTART_AT, 0);
+        if (restartedAt > 0) {
+            text.append('\n').append(getString(R.string.status_last_restart, time(restartedAt)));
+        }
         String version = Buds.pluginVersion(this);
         text.append('\n').append(version == null ? getString(R.string.problem_plugin_missing)
                 : getString(R.string.status_plugin, version));
