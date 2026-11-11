@@ -20,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   ARMTEST:   runs the after-restart check now. By default it forces the whole repair even though
  *              the plugin is in ARM mode (a test that changes nothing); with --ez force false it
  *              runs exactly the check a restart runs.
+ *   AUTOTEST:  runs the Galaxy Buds auto-connect check now (LeArmTool). --es mode check (read only, the
+ *              default), arm (exactly what a restart runs) or arm-force (re-applies even if already armed).
  *   STUCKTEST: makes the next verify check act as if the plugin had been stuck for 5 minutes (classic
  *              link down, 4 failed checks so far, no recent restart) and runs it now. It tests the whole
  *              stuck-plugin restart path; the plugin really is restarted.
@@ -58,6 +60,11 @@ public class ControlReceiver extends BroadcastReceiver {
         } else if ("local.budslelink.ARMTEST".equals(action)) {
             ArmJob.schedule(context, 0, intent.getBooleanExtra("force", true));
             setResultData("scheduled");
+        } else if ("local.budslelink.AUTOTEST".equals(action)) {
+            String mode = intent.getStringExtra("mode");
+            if (mode == null || !(mode.equals("check") || mode.equals("arm") || mode.equals("arm-force"))) mode = "check";
+            AutoConnectJob.schedule(context, 0, mode);
+            setResultData("scheduled " + mode);
         } else if ("local.budslelink.STUCKTEST".equals(action)) {
             State.setClassic(context, State.CLASSIC_DOWN);
             State.prefs(context).edit().putInt(State.FAILED_CHECKS, CheckJob.FAILURES_BEFORE_RESTART - 1)

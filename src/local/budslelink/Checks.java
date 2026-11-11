@@ -22,6 +22,7 @@ final class Checks {
     private static final int SETUP_NOTIFICATION = 1;
     private static final int RECONNECT_NOTIFICATION = 2;
     private static final int ARM_NOTIFICATION = 3;
+    private static final int AUTOCONNECT_NOTIFICATION = 4;
 
     private Checks() {}
 
@@ -59,6 +60,11 @@ final class Checks {
             notify(context, SETUP_NOTIFICATION, context.getString(R.string.alert_setup_title),
                     String.join("\n", problems));
         }
+    }
+
+    /** The Galaxy Buds' LE Audio auto-connect could not be confirmed after a restart: posts a notification. */
+    static void autoConnectProblem(Context context, String text) {
+        notify(context, AUTOCONNECT_NOTIFICATION, context.getString(R.string.alert_autoconnect_title), text);
     }
 
     /** The ARM repair after a restart switched Samsung's plugin back: posts a notification once. */

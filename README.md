@@ -7,7 +7,8 @@ signals Samsung's Galaxy Buds plugin to open its control link whenever the earbu
 reinstalling the Galaxy Buds plugin in its ARM version so that Galaxy Wearable stops crashing on the Googlebook's
 Intel processor. Since version 2.3, Buds LE Link also keeps the plugin in ARM mode after every restart, because a
 GooglebookOS update can switch it back to Intel mode. Since version 2.4, it also restarts the plugin by itself
-when the plugin gets stuck and stops connecting.
+when the plugin gets stuck and stops connecting. Since version 2.5, it also puts the Galaxy Buds back on LE Audio's
+auto-connect list after a restart if the restart took them off it.
 
 ## What it does
 
@@ -29,6 +30,9 @@ own:
 - After every restart it checks whether Android has switched the plugin to Intel mode. If it has, and the optional
   automatic ARM repair is set up, it reinstalls the saved plugin in ARM mode by itself and tells me with a
   notification.
+- A minute after every restart it checks whether the Galaxy Buds are still on LE Audio's auto-connect list, because
+  a restart can take them off it. If they are off it, and the optional pairing from Part 3 is set up, it puts them
+  back by itself. It warns me only if that does not work.
 
 A status window shows the link state, the time of the last reconnect signal, the installed plugin version and the
 setup checks. It has a **Reconnect now** button and an **Open Galaxy Wearable** button, and every failed setup
@@ -140,8 +144,9 @@ In the first test, the plugin's link came back about 4 seconds after the earbuds
 
 I wanted it to be foolproof, so version 2 added the 15-minute check, the setup checks with a Fix button for every
 permission and battery setting it needs, and the status window. Version 2.2 turned that window into a normal app
-window that closes cleanly without affecting the background part. Version 2.3 added the automatic ARM repair, and
-version 2.4 added the restart of a stuck plugin. Both are described next.
+window that closes cleanly without affecting the background part. Version 2.3 added the automatic ARM repair,
+version 2.4 added the restart of a stuck plugin, and version 2.5 added the auto-connect check after restarts. All
+three are described next.
 
 ### Keeping the plugin in ARM mode after restarts
 
@@ -201,11 +206,50 @@ failure, found the current Wireless debugging port by itself because the saved o
 and the control channel was connected 3 seconds later. The next check found the link up and posted no warning. I
 have not yet seen the 30-minute limit act in a live test.
 
+### Keeping LE Audio auto-connect after restarts
+
+My Pixel Buds stopped connecting by themselves after some restarts of the Googlebook, and Bluetooth's log showed
+why. When GooglebookOS starts, Bluetooth first starts for Android's user 0, whose Bluetooth database has LE Audio
+turned off for the earbuds. It takes them off LE Audio's auto-connect list, and that is saved. Then Bluetooth
+starts again for my own Android user, where LE Audio is allowed, and puts them back on the list, but only if the
+earbuds are already loaded when it checks. On one restart that check ran 2 milliseconds too early, and the earbuds
+stayed off the list.
+
+The same log showed both of my Galaxy Buds4 earbuds being taken off the list in the same way on that restart. On
+the next restart they were put back in time. I did not use the Buds4 after the first restart, so I have not seen
+them fail to connect myself. Since the outcome is a race, I believe it can happen on any restart.
+
+My [Buds Battery Fix](https://github.com/iamflying29-sketch/googlebook-buds-battery-fix) found the step that puts
+earbuds back: applying their LE Audio setting ALLOWED again, which it already is, makes Bluetooth add them back to
+the auto-connect list. Version 2.5 of Buds LE Link does the same for the Galaxy Buds:
+
+1. **A minute after every restart** (and only then), a job connects to Wireless debugging with the pairing from
+   Part 3, proves it reached Android's adb service, and runs a small tool from Buds LE Link's own APK as the adb
+   shell user, because an ordinary app may not change Bluetooth connection settings and the adb shell user may. The tool waits until Bluetooth has
+   run for 10 seconds, so it never acts while Bluetooth is still starting.
+2. **It checks both earbuds.** For every paired device whose name contains "Galaxy Buds", it reads the LE Audio
+   setting, the connection state and the latest auto-connect entry in Bluetooth's own log lines. The log read stops
+   after 10 seconds or 256 KB, whichever comes first.
+3. **It changes nothing when nothing is wrong.** If the earbuds are connected, are on the auto-connect list, or
+   have their LE Audio setting turned off, it leaves them alone.
+4. **Otherwise it re-applies the ALLOWED setting once.** Bluetooth applies it to both earbuds as a group.
+5. **It confirms the result.** 35 seconds later it reads the log again. If Bluetooth is still trying to connect, it
+   looks once more 30 seconds after that. It posts **Galaxy Buds auto-connect after the restart** only if the
+   earbuds are not back on the list. The status window shows the result of the last check.
+
+I tested it on my Googlebook with GooglebookOS build CL3B.260622.286.R2. A read-only run found both earbuds and
+changed nothing. A test of the log reader showed that the size cap and the deadline each stop it, and that no log
+reader is left running. A forced run with the earbuds in their case re-applied the setting once, Bluetooth's log
+showed both earbuds put back on the auto-connect list from that one call, and the tool reported them back on the
+list after its connection attempt had timed out. Running the restart check again right after that correctly found
+them on the list and changed nothing. I have not yet tested it with a real restart, or while the earbuds were
+connected.
+
 ## Requirements
 
 - **Device:** a Lenovo Googlebook 15 (x86-64 Intel), or another x86-64 GooglebookOS device whose Galaxy Buds plugin
   has the same problem. I built and tested this on GooglebookOS builds CL3B.260622.271.R1 and CL3B.260622.276.R4
-  (Android 17).
+  (Android 17), and the auto-connect check on CL3B.260622.286.R2.
 - **Earbuds:** Samsung Galaxy Buds4, paired in Bluetooth settings and connected over LE Audio. The helper reacts to
   any device whose name contains "Galaxy Buds", but I only tested the Buds4.
 - **Samsung apps:** Galaxy Wearable (`com.samsung.android.app.watchmanager`) and its Galaxy Buds plugin
@@ -214,7 +258,8 @@ have not yet seen the 30-minute limit act in a live test.
 - **Android version:** Buds LE Link needs Android 13 (API level 33) or later. It targets API level 35.
 - **Permissions used by Buds LE Link:** Nearby devices (`BLUETOOTH_CONNECT`), notifications (`POST_NOTIFICATIONS`),
   starting at boot (`RECEIVE_BOOT_COMPLETED`), and permission to ask for unrestricted battery use
-  (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). For the automatic ARM repair it also has `INTERNET`,
+  (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). For the automatic ARM repair, the plugin restart and the
+  auto-connect check it also has `INTERNET`,
   `ACCESS_NETWORK_STATE` and `ACCESS_LOCAL_NETWORK`. It uses them only to find and reach the Googlebook's own
   Wireless debugging service at `127.0.0.1`. See [Safety and privacy notes](#safety-and-privacy-notes).
 - **Tools:** the Linux Terminal with adb connected to GooglebookOS over Wireless debugging, `unzip`, `openssl` for
@@ -400,12 +445,13 @@ are Samsung's software, so do not share them.
    window should show **Galaxy Buds app: connected**. You can now close the window. The background part keeps
    working.
 
-### Part 3 (optional): Set up the automatic ARM repair and plugin restart
+### Part 3 (optional): Set up the automatic ARM repair, plugin restart and auto-connect check
 
 Without this part, Buds LE Link still warns you when the plugin is in Intel mode or stuck, and you fix it yourself
-(repeat Part 1, or restart the plugin as described in [Troubleshooting](#troubleshooting)). With it, Buds LE Link
-repairs the ARM mode by itself after a restart and restarts a stuck plugin by itself. Both need Wireless debugging to
-be on. Steps 4 and 5 are only needed for the ARM repair.
+(repeat Part 1, or restart the plugin as described in [Troubleshooting](#troubleshooting)). It also cannot check the
+Galaxy Buds' auto-connect after a restart. With it, Buds LE Link repairs the ARM mode by itself after a restart,
+restarts a stuck plugin by itself, and puts the Galaxy Buds back on LE Audio's auto-connect list after a restart when
+needed. All three need Wireless debugging to be on. Steps 4 and 5 are only needed for the ARM repair.
 
 1. Make an adb key just for Buds LE Link and pair it with Wireless debugging. The key gets its own folder and its own
    adb server port (5041 here), so it never mixes with the adb you normally use. On the Googlebook, open
@@ -484,6 +530,18 @@ be on. Steps 4 and 5 are only needed for the ARM repair.
    After a few seconds the log should show `plugin restart: restarted Samsung's plugin`, and the status window
    shows the time next to **Last restart of a stuck Samsung plugin**.
 
+8. Optionally, test the auto-connect check. This command runs it in read-only mode, which changes nothing:
+
+   ```bash
+   adb shell am broadcast --user <USER_ID> -n local.budslelink/.ControlReceiver -a local.budslelink.AUTOTEST
+   adb logcat -d -s BudsLELink | grep 'auto-connect check'
+   ```
+
+   Within a minute the log shows what the tool found for each earbud and a line starting with
+   `auto-connect check: RESULT`. To run exactly the check that a restart runs, add `--es mode arm` to the first
+   command. It changes something only if the earbuds are off the auto-connect list, and it takes up to about
+   two minutes to finish.
+
 ## Using it
 
 Day to day there is nothing to do. When the earbuds connect, Buds LE Link signals the plugin, and the Galaxy
@@ -502,6 +560,8 @@ Open **Buds LE Link** from the app launcher. Opening the window also sends a rec
 - **Last reconnect signal:** the time of the last signal it sent to the plugin.
 - **Last restart of a stuck Samsung plugin:** the time of the last automatic plugin restart. This line appears only
   after the first one.
+- **Auto-connect check after the last restart:** the time and result of the last auto-connect check. This line
+  appears only after the first one.
 - **Samsung Buds plugin:** the installed plugin version. If it is not the version this helper was written for
   (9.0.10.1720), the line adds a note that it has changed.
 
@@ -538,6 +598,9 @@ Buds LE Link posts notifications only when something is wrong or has just been r
   the earbuds disconnect.
 - **Samsung Buds plugin repaired** appears once when the automatic ARM repair has switched the plugin back to ARM
   mode after a restart.
+- **Galaxy Buds auto-connect after the restart** appears when the auto-connect check could not confirm that the
+  earbuds are back on LE Audio's auto-connect list, or could not finish after 20 tries, which take about an hour and a half after the restart.
+  The text says what it found.
 
 Tapping any of these notifications opens the status window.
 
@@ -552,10 +615,12 @@ adb logcat -d -s BudsLELink
 You will see lines such as `Sending ACTION_READY to com.samsung.accessory.budsunitemgr` and, when the control link
 does not come up, `Buds on LE Audio but no control link yet (check 1)`. The automatic ARM repair writes lines that
 start with `ARM repair:` and, when there is nothing to do, `plugin is in ARM mode: nothing to do`. A restart of a
-stuck plugin writes `plugin restart: restarted Samsung's plugin`.
+stuck plugin writes `plugin restart: restarted Samsung's plugin`. The auto-connect check writes lines that start with
+`auto-connect check:`.
 
 Right after a restart, the check's log line was missing once on my Googlebook. Android's job history shows
-whether it ran (job 3 is the ARM check, and "onStartJob returned false" means the plugin was in ARM mode):
+whether it ran (job 3 is the ARM check, and "onStartJob returned false" means the plugin was in ARM mode, and job 4 is the
+auto-connect check):
 
 ```bash
 adb shell dumpsys jobscheduler | grep budslelink
@@ -581,7 +646,8 @@ seconds later. Its permissions and protections carry over. If you lost your keys
 ### After a reboot
 
 Nothing to do. A boot receiver re-creates the 15-minute check, marks the classic link as down, runs a verify check
-20 seconds after startup, and runs the ARM check 5 seconds after startup.
+20 seconds after startup, runs the ARM check 5 seconds after startup, and runs the auto-connect check a minute
+after startup.
 
 ### After a Galaxy Buds plugin update
 
@@ -691,30 +757,39 @@ earbuds' own behavior. I confirmed it with Buds LE Link disabled. Put them in th
 ## Safety and privacy notes
 
 - **It never contacts anything outside the Googlebook.** The internet permission exists only for the automatic ARM
-  repair, which connects to `127.0.0.1`, the Googlebook's own Wireless debugging service. To find that service's
+  repair, the plugin restart and the auto-connect check, which connect to `127.0.0.1`, the Googlebook's own Wireless debugging service. To find that service's
   current port it listens for the local network announcements of Wireless debugging and accepts only ports that
   this Googlebook itself announces. Before it sends any command, it proves that it reached Android's real adb
   service.
 - **What the pairing is used for.** Its key has the rights of adb on the Googlebook, like any Wireless debugging
-  pairing. The app uses it in only two situations and for only four commands. After a restart, only when the plugin
+  pairing. The app uses it in only three situations. After a restart, only when the plugin
   is in Intel mode, it sends a broadcast back to itself for the proof, runs `sha256sum` on the saved plugin copy, and
   runs the `pm install --abi arm64-v8a` reinstall of that copy. When the plugin is stuck (five failed checks in a row,
-  at most once every 30 minutes), it sends the proof broadcast and runs `am force-stop` for Samsung's plugin. The key
+  at most once every 30 minutes), it sends the proof broadcast and runs `am force-stop` for Samsung's plugin. A minute after a
+  restart, it sends the proof broadcast, runs `pm path` to find Buds LE Link's own APK, and runs the auto-connect tool
+  from that APK with `app_process`. The tool reads Bluetooth's own log lines about the earbuds' auto-connect state
+  and, only when the Galaxy Buds are off the auto-connect list, re-applies their existing LE Audio setting. The key
   file lives in the app's private storage, and the app's backup is turned off.
-- **It never connects or disconnects a Bluetooth device itself.** It only sends one broadcast, addressed to the
-  Galaxy Buds plugin's package, and the plugin acts only on the earbuds it manages. The plugin also has a
+- **It never disconnects a Bluetooth device, and it never connects one directly.** To keep the Galaxy Buds app connected
+  it only sends one broadcast, addressed to the Galaxy Buds plugin's package, and the plugin acts only on the earbuds
+  it manages. The one other thing it does to Bluetooth is the auto-connect check after a restart: when the Galaxy
+  Buds are off LE Audio's auto-connect list, it applies their LE Audio setting ALLOWED again, which they already have.
+  Bluetooth then puts them back on the list and tries to connect them, the same as after a restart that goes right.
+  It never changes the setting of a device whose LE Audio is turned off. The plugin also has a
   disconnect command that disconnects the system's own Bluetooth profiles. Buds LE Link never sends it.
 - **It ignores every other device.** Other earbuds, headphones, speakers and keyboards are ignored outright. Only
   devices whose name contains "Galaxy Buds", or whose address was seen with such a name, trigger anything.
 - **What it stores.** A small private settings file on the device holds the Bluetooth addresses of Galaxy Buds it
   has seen (so renamed earbuds still match), the classic link state and when it changed, the time of the last
-  signal, the last time the earbuds were seen on LE Audio, and the count of failed verify checks. Backup is turned
+  signal, the last time the earbuds were seen on LE Audio, the count of failed verify checks, and the time and result of
+  the last auto-connect check. Backup is turned
   off for the app.
 - **It never blocks the system.** It uses only public Android Bluetooth and job scheduling interfaces, and it asks
   the LE Audio service one targeted question with a 10-second timeout. It acts only on Bluetooth link events for
   Galaxy Buds, at boot, in its 15-minute check and in short verify checks. It never reads system service dumps. Its
-  adb connection exists only during the automatic ARM repair or a plugin restart, and every command has a 2-minute limit and a 1 MB
-  output limit.
+  adb connection exists only during the automatic ARM repair, a plugin restart or the auto-connect check, and every
+  command has a 2-minute limit and a 1 MB output limit. The auto-connect tool also stops itself after 105 seconds
+  whatever happens, and each of its log reads stops after 10 seconds or 256 KB.
 - **Samsung's app is not modified.** The crash fix reinstalls Samsung's own unmodified APK, copied from your own
   device. The helper only sends a broadcast that the plugin already listens for. This repository contains none of
   Samsung's code or files.
@@ -743,25 +818,32 @@ earbuds' own behavior. I confirmed it with Buds LE Link disabled. Put them in th
 - **The automatic ARM repair needs Wireless debugging.** It only runs when Wireless debugging is on after the
   restart. It works only with the exact plugin file it checks for (version 9.0.10.1720, the fingerprint in Part 3),
   and it only checks after a restart, not at other times.
+- **The auto-connect check needs Wireless debugging too,** and it also runs only after a restart. It reads the
+  earbuds' auto-connect state from Bluetooth's log. If the log no longer holds that entry, the check treats the
+  earbuds as off the list and re-applies the setting, which does no harm when they were on it. It looks at every
+  paired device whose name contains "Galaxy Buds", and I have only tested it with the Buds4, without a real restart
+  so far.
 - **Tested on one setup.** I tested this with Galaxy Buds4 on one Lenovo Googlebook 15 with GooglebookOS build
-  CL3B.260622.271.R1 and CL3B.260622.276.R4. Other Galaxy Buds models match by name, but I have not tested them.
+  CL3B.260622.271.R1, CL3B.260622.276.R4 and CL3B.260622.286.R2. Other Galaxy Buds models match by name, but I have not tested them.
 
 ## Files in this repository
 
 | File | Purpose |
 |---|---|
 | `AndroidManifest.xml` | App manifest: package `local.budslelink`, permissions, the status window, the Bluetooth, boot and control receivers, and the jobs |
-| `build.sh` | Builds and signs `BudsLELink.apk` with plain SDK tools (version 2.4, version code 6, API levels 33 to 35) |
+| `build.sh` | Builds and signs `BudsLELink.apk` with plain SDK tools (version 2.5, version code 7, API levels 33 to 35) |
 | `src/local/budslelink/AclReceiver.java` | Reacts to Galaxy Buds links coming up or going down and sends the timed reconnect signals |
 | `src/local/budslelink/Nudge.java` | Sends the "Bluetooth ready" broadcast to the plugin |
 | `src/local/budslelink/CheckJob.java` | The 15-minute check and the verify checks |
 | `src/local/budslelink/Checks.java` | Setup checks and the problem notifications |
-| `src/local/budslelink/BootReceiver.java` | Re-creates the checks after a reboot or an update of the helper, and schedules the ARM check after a reboot |
+| `src/local/budslelink/BootReceiver.java` | Re-creates the checks after a reboot or an update of the helper, and schedules the ARM check and the auto-connect check after a reboot |
 | `src/local/budslelink/ArmJob.java` | The ARM check after a restart and the automatic repair |
+| `src/local/budslelink/AutoConnectJob.java` | The auto-connect check after a restart: runs the tool through the app's own pairing and records the result |
+| `src/local/budslelink/LeArmTool.java` | The auto-connect tool that runs as the adb shell user: reads the earbuds' auto-connect state and re-applies their LE Audio setting when needed |
 | `src/local/budslelink/PluginRestart.java` | Restarts a stuck plugin, at most once every 30 minutes |
 | `src/local/budslelink/AdbAccess.java` | Finds the current Wireless debugging port, connects with the app's own key and proves it reached Android's adb service |
 | `src/local/budslelink/AdbClient.java` | A minimal adb client for Wireless debugging (TLS with the app's own paired key) |
-| `src/local/budslelink/ControlReceiver.java` | Commands only the adb shell can send: install the key, the proof code, the repair test and the stuck-plugin test |
+| `src/local/budslelink/ControlReceiver.java` | Commands only the adb shell can send: install the key, the proof code, the repair test, the stuck-plugin test and the auto-connect test |
 | `src/local/budslelink/Buds.java` | Recognizes Galaxy Buds and checks the plugin's installation and version |
 | `src/local/budslelink/State.java` | The small saved state (known addresses, link state, times, failure count) |
 | `src/local/budslelink/MainActivity.java` | The status window |

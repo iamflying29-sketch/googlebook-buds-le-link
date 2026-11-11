@@ -149,6 +149,11 @@ public class MainActivity extends Activity {
         if (restartedAt > 0) {
             text.append('\n').append(getString(R.string.status_last_restart, time(restartedAt)));
         }
+        String autoResult = State.prefs(this).getString(AutoConnectJob.LAST_RESULT, null);
+        long autoAt = State.prefs(this).getLong(AutoConnectJob.LAST_RESULT_AT, 0);
+        if (autoResult != null && autoAt > 0) {
+            text.append('\n').append(getString(R.string.status_autoconnect, time(autoAt), autoResult));
+        }
         String version = Buds.pluginVersion(this);
         text.append('\n').append(version == null ? getString(R.string.problem_plugin_missing)
                 : getString(R.string.status_plugin, version));

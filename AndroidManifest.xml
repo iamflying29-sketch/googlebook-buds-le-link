@@ -65,6 +65,11 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <service
+            android:name=".AutoConnectJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- Only the adb shell or the system can send to this (DUMP is a system permission). -->
         <receiver
             android:name=".ControlReceiver"
